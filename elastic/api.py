@@ -2,65 +2,75 @@ from flask import Flask, jsonify, request
 from elasticsearch import Elasticsearch
 import os
 
-elastic_client = Elasticsearch(hosts=["http://localhost:9200"])
+
 app = Flask(__name__)
 basedir = os.path.abspath(os.path.dirname(__file__))
 
 @app.route("/getInfo", methods=["GET", "POST"])
 def getInfo():
-    if type(request.json["customerID"]) is int and request.json["customerID"] > 0:#check customerID
-        customerID = request.json["customerID"]# lấy cuutomerID
-    else:
-        return jsonify("error : maybe customerID is str or customerID < 0. Please check again!")
-    fromTime = request.json["fromTime"]#lấy khoảng thời gian tìm kiếm
-    toTime = request.json["toTime"]
-    List_Order = []
+    try:#check for connect to elastic
+        elastic_client = Elasticsearch(hosts=["http://localhost:9200"])
 
-    body = {
-        "query": {
-            "bool": {
-                "must": [{
-                    "match": {
-                        "customer_id": customerID
-                    }
-                }, {
-                    "range": {
-                        "order_date": {
-                            "gte": fromTime,
-                            "lte": toTime
+        if type(request.json["customerID"]) is int and request.json["customerID"] > 0:#check customerID
+            customerID = request.json["customerID"]# lấy customerID
+        else:
+            return jsonify("error : maybe customerID is str or customerID < 0. Please check again!")
+        fromTime = request.json["fromTime"]#lấy khoảng thời gian tìm kiếm
+        toTime = request.json["toTime"]
+        List_Order = []
+
+        body = {
+            "query": {
+                "bool": {
+                    "must": [{
+                        "match": {
+                            "customer_id": customerID
+                        }
+                    }, {
+                        "range": {
+                            "order_date": {
+                                "gte": fromTime,
+                                "lte": toTime
+                                }
                             }
                         }
-                    }
-                ]
+                    ]
+                }
             }
         }
-    }
 
-    res = elastic_client.search(body=body)
+        res = elastic_client.search(body=body)
 
-    for hit in res['hits']['hits']:
-        customer_id = hit["_source"]["customer_id"]
-        customer_name = hit["_source"]["customer_full_name"]
-        order_id = hit["_source"]["order_id"]
-        order_date = hit["_source"]["order_date"]
-        product_id = hit["_source"]["products"][1]["product_id"]
-        product_name = hit["_source"]["products"][1]["product_name"]
-        price = hit["_source"]["products"][1]["price"]
+        if not res['hits']['hits']:#check customer_id exist or not
+            return jsonify("no have this customerID!")
+        else:
+            for hit in res['hits']['hits']:
+                customer_id = hit["_source"]["customer_id"]
+                customer_name = hit["_source"]["customer_full_name"]
+                order_id = hit["_source"]["order_id"]
+                order_date = hit["_source"]["order_date"]
+                product_id = hit["_source"]["products"][1]["product_id"]
+                product_name = hit["_source"]["products"][1]["product_name"]
+                price = hit["_source"]["products"][1]["price"]
 
-        order = {
-            "customer_id": customer_id,
-            "customer_name": customer_name,
-            "order_id": order_id,
-            "order_date": order_date,
-            "product_id": product_id,
-            "product_name": product_name,
-            "price": price
-        }
+                order = {
+                    "customer_id": customer_id,
+                    "customer_name": customer_name,
+                    "order_id": order_id,
+                    "order_date": order_date,
+                    "product_id": product_id,
+                    "product_name": product_name,
+                    "price": price
+                }
 
-        List_Order.append(order)
-    if not List_Order:#check list nếu rỗng
-        return jsonify("no product ordered!")
-    return jsonify(List_Order)#trả ra list order
+                List_Order.append(order)
+
+            if not List_Order:#check list nếu rỗng
+                return jsonify("no product ordered!")
+            return jsonify(List_Order)#trả ra list order
+    except:
+        #connect failure
+        return jsonify("Connect to elastic is failure!")
 
 if __name__=="__main__":
     app.run(debug=True)
